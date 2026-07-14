@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Instant Test</title>
+<style>
+body { font-family: sans-serif; padding: 20px; background: #e5e7eb; text-align: center; transition: background 0.5s; }
+.card { background: white; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.btn { background: #2563eb; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; display: block; width: 100%; box-sizing: border-box; font-weight: bold; }
+#debug { background: #1e1e1e; color: #4af626; text-align: left; padding: 15px; border-radius: 5px; font-family: monospace; min-height: 100px; }
+#preview { width: 100%; max-height: 250px; object-fit: contain; margin-top: 15px; display: none; }
+</style>
+</head>
+<body>
+
+<h1>Instant Receipt Test</h1>
+
+<div class="card">
+<h3>System Diagnostics</h3>
+<!-- This starts completely empty. JS must insert the text. -->
+<div id="debug"></div>
+</div>
+
+<div class="card">
+<label for="camera" class="btn">📷 Take or Upload Photo</label>
+<input type="file" id="camera" accept="image/*" capture="environment" style="display: none;">
+<img id="preview" alt="Preview window">
+</div>
+
+<script>
+const debugDiv = document.getElementById('debug');
+
+// 1. Run IMMEDIATELY to prove JS is alive
+debugDiv.innerHTML = "> JavaScript has successfully started!";
+document.body.style.backgroundColor = "#d1fae5"; // Instantly turns background light green!
+
+// 2. Setup the camera listener directly
+const cameraInput = document.getElementById('camera');
+const previewImage = document.getElementById('preview');
+
+cameraInput.onchange = function(e) {
+debugDiv.innerHTML += "<br>> File detected!";
+const file = e.target.files[0];
+
+if (!file) {
+debugDiv.innerHTML += "<br>> Error: No file selected.";
+return;
+}
+
+debugDiv.innerHTML += "<br>> Processing: " + file.name;
+
+const reader = new FileReader();
+
+reader.onload = function(event) {
+debugDiv.innerHTML += "<br>> Image loaded successfully!";
+previewImage.src = event.target.result;
+previewImage.style.display = 'block';
+};
+
+reader.onerror = function() {
+debugDiv.innerHTML += "<br>> Error reading file.";
+};
+
+reader.readAsDataURL(file);
+};
+
+debugDiv.innerHTML += "<br>> Ready. Tap the camera button.";
+</script>
+</body>
+</html>
