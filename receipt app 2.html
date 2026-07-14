@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receipt Scanner & Expense Ledger</title>
+<!-- Tesseract.js OCR Engine -->
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<style>
+:root {
+--bg: #f4f6f9;
+--surface: #ffffff;
+--primary: #2563eb;
+--primary-hover: #1d4ed8;
+--success: #10b981;
+--text: #1f2937;
+--text-light: #6b7280;
+--border: #e5e7eb;
+}
+
+* {
+box-sizing: border-box;
+margin: 0;
+padding: 0;
+font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+background-color: var(--bg);
+color: var(--text);
+padding: 16px;
+max-width: 600px;
+margin: 0 auto;
+}
+
+header {
+margin-bottom: 24px;
+text-align: center;
+}
+
+h1 {
+font-size: 24px;
+color: var(--primary);
+margin-bottom: 4px;
+}
+
+.subtitle {
+font-size: 14px;
+color: var(--text-light);
+}
+
+.card {
+background: var(--surface);
+padding: 20px;
+border-radius: 12px;
+box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+margin-bottom: 20px;
+border: 1px solid var(--border);
+}
+
+.camera-section {
+text-align: center;
+display: flex;
+flex-direction: column;
+align-items: center;
+gap: 12px;
+}
+
+.btn-capture {
+background-color: var(--primary);
+color: white;
+padding: 14px 24px;
+border-radius: 8px;
+font-size: 16px;
+font-weight: 600;
+cursor: pointer;
+display: inline-flex;
+align-items: center;
+gap: 8px;
+border: none;
+width: 100%;
+justify-content: center;
+transition: background 0.2s;
+}
+
+.btn-capture:hover {
+background-color: var(--primary-hover);
+}
+
+input[type="file"] {
+display: none;
+}
+
+#preview {
+max-width: 100%;
+max-height: 200px;
+border-radius: 8px;
+margin-top: 12px;
+display: none;
+border: 1px solid var(--border);
+}
+
+.status-box {
+font-size: 14px;
+color: var(--primary);
+font-weight: 500;
+margin-top: 8px;
+display: none;
+text-align: center;
+line-height: 1.4;
+}
+
+.form-group {
+margin-bottom: 12px;
+}
+
+.form-group label {
+display: block;
+font-size: 12px;
+font-weight: 600;
+text-transform: uppercase;
+color: var(--text-light);
+margin-bottom: 4px;
+}
+
+.form-group input, .form-group select {
+width: 100%;
+padding: 10px;
+border: 1px solid var(--border);
+border-radius: 6px;
+font-size: 15px;
+color: var(--text);
+outline: none;
+}
+
+.form-group input:focus {
+border-color: var(--primary);
+}
+
+.btn-save {
+background-color: var(--success);
+color: white;
+width: 100%;
+padding: 12px;
+border: none;
+border-radius: 6px;
+font-size: 15px;
+font-weight: 600;
+cursor: pointer;
+margin-top: 8px;
+}
+
+.ledger-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 12px;
+}
+
+.btn-export {
+background: none;
+border: 1px solid var(--primary);
+color: var(--primary);
+padding: 6px 12px;
+border-radius: 6px;
+font-size: 13px;
+font-weight: 600;
+cursor: pointer;
+}
+
+.btn-export:hover {
+background-color: #eff6ff;
+}
+
+.table-container {
+overflow-x: auto;
+}
+
+table {
+width: 100%;
+border-collapse: collapse;
+text-align: left;
+font-size: 14px;
+}
+
+th {
+background-color: var(--bg);
+padding: 10px;
+font-weight: 600;
+color: var(--text-light);
+border-bottom: 2px solid var(--border);
+}
+
+td {
+padding: 12px 10px;
+border-bottom: 1px solid var(--border);
+}
+
+.actions-cell {
+text-align: right;
+}
+
+.btn-delete {
+background: none;
+border: none;
+color: #ef4444;
+cursor: pointer;
+font-size: 13px;
+}
+
+.empty-state {
+text-align: center;
+color: var(--text-light);
+padding: 20px 0;
+font-size: 14px;
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>Receipt Ledger</h1>
+<p class="subtitle">Scan receipts, extract metrics, export cleanly</p>
+</header>
+
+<!-- STEP 1: Capture Section -->
+<div class="card">
+<div class="camera-section">
+<label for="camera-input" class="btn-capture">
+📷 Snap or Upload Receipt
+</label>
+<input type="file" id="camera-input" accept="image/*" capture="environment">
+<div id="status" class="status-box">Ready</div>
+<img id="preview" alt="Receipt preview">
+</div>
+</div>
+
+<!-- STEP 2: Review Panel -->
+<div class="card" id="review-panel" style="display: none;">
+<h3 style="margin-bottom: 12px; font-size: 16px;">Verify Parsed Entry</h3>
+
+<div class="form-group">
+<label for="edit-vendor">Vendor / Merchant</label>
+<input type="text" id="edit-vendor">
+</div>
+
+<div class="form-group">
+<label for="edit-amount">Total Amount ($`)</label>
+<input type="number" id="edit-amount" step="0.01">
+</div>
+
+<div class="form-group">
+<label for="edit-category">Category</label>
+<select id="edit-category">
+<option value="Food & Dining">Food & Dining</option>
+<option value="Transport & Fuel">Transport & Fuel</option>
+<option value="Groceries">Groceries</option>
+<option value="Shopping & Retail">Shopping & Retail</option>
+<option value="Utilities & Bills">Utilities & Bills</option>
+<option value="Other">Other</option>
+</select>
+</div>
+
+<button class="btn-save" id="save-entry-btn">Confirm & Log Expense</button>
+</div>
+
+<!-- STEP 3: Ledger Display -->
+<div class="card">
+<div class="ledger-header">
+<h3 style="font-size: 16px;">Logged Expenses</h3>
+<button class="btn-export" id="export-btn">📥 Export CSV</button>
+</div>
+
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Vendor</th>
+<th>Category</th>
+<th>Amount</th>
+<th class="actions-cell">Action</th>
+</tr>
+</thead>
+<tbody id="ledger-body"></tbody>
+</table>
+<div id="empty-msg" class="empty-state">No receipts logged yet.</div>
+</div>
+</div>
+
+<script>
+// DOM Elements
+const cameraInput = document.getElementById('camera-input');
+const preview = document.getElementById('preview');
+const statusBox = document.getElementById('status');
+const reviewPanel = document.getElementById('review-panel');
+
+const editVendor = document.getElementById('edit-vendor');
+const editAmount = document.getElementById('edit-amount');
+const editCategory = document.getElementById('edit-category');
+const saveEntryBtn = document.getElementById('save-entry-btn');
+
+const ledgerBody = document.getElementById('ledger-body');
+const emptyMsg = document.getElementById('empty-msg');
+const exportBtn = document.getElementById('export-btn');
+
+const STORAGE_KEY = 'receipt_ledger_data';
+let expenses = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+renderLedger();
+
+cameraInput.addEventListener('change', function(e) {
+const file = e.target.files[0];
+if (!file) return;
+
+statusBox.style.display = 'block';
+statusBox.innerText = "⏳ Reading image file...";
+
+const reader = new FileReader();
+reader.onload = function(event) {
+preview.src = event.target.result;
+preview.style.display = 'block';
+
+// Re-draw onto canvas to solve EXIF orientation and proxy blocks
+const img = new Image();
+img.onload = function() {
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = img.width;
+canvas.height = img.height;
+ctx.drawImage(img, 0, 0);
+
+canvas.toBlob((blob) => {
+processReceiptImage(blob);
+}, 'image/jpeg', 0.85);
+};
+img.src = event.target.result;
+};
+reader.readAsDataURL(file);
+});
+
+function processReceiptImage(imageSource) {
+statusBox.innerText = "⏳ Initializing OCR Engine...";
+
+Tesseract.recognize(
+imageSource,
+'eng',
+{
+workerPath: 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/worker.min.js',
+corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5/tesseract-core.wasm.js',
+logger: m => {
+if(m.status === 'recognizing') {
+statusBox.innerText = ⚡ Processing Text:${Math.floor(m.progress * 100)}%`;
+}
+}
+}
+).then(({ data: { text } }) => {
+if (!text || text.trim().length === 0) {
+statusBox.innerText = "⚠️ No text found. Please fill values manually.";
+showReviewPanel("Local Merchant", 0.00, "Other");
+} else {
+statusBox.innerText = "✅ Done!";
+parseReceiptText(text);
+}
+}).catch(err => {
+console.error("OCR Error Details:", err);
+statusBox.innerText = "❌ Environment Error. Opened manual form entry.";
+showReviewPanel("Unknown Merchant", 0.00, "Other");
+});
+}
+
+function parseReceiptText(rawText) {
+const lines = rawText.split('\n');
+let detectedVendor = "";
+let detectedAmount = 0.00;
+let detectedCategory = "Other";
+
+for (let i = 0; i < lines.length; i++) {
+let cleanLine = lines[i].trim();
+if (cleanLine.length > 2 && !cleanLine.match(/\d/) && !cleanLine.toLowerCase().includes('receipt')) {
+detectedVendor = cleanLine;
+break;
+}
+}
+if(!detectedVendor) detectedVendor = "Local Merchant";
+
+let highestAmount = 0;
+const monetaryRegex = /(?:total|grand\stotal|due|net|amt|val)[\s\S]?(\d+[.,]\s*\d{2})/i;
+const matches = rawText.match(monetaryRegex);
+
+if (matches && matches[1]) {
+detectedAmount = parseFloat(matches[1].replace(',', '.'));
+} else {
+const globalMoneyRegex = /\b\d+[.,]\s*\d{2}\b/g;
+const genericPrices = rawText.match(globalMoneyRegex);
+if (genericPrices) {
+const priceNumbers = genericPrices.map(p => parseFloat(p.replace(',', '.')));
+highestAmount = Math.max(...priceNumbers);
+if(highestAmount < 5000) detectedAmount = highestAmount;
+}
+}
+
+const lowerText = rawText.toLowerCase();
+if (lowerText.match(/(mcdonald|restaurant|cafe|coffee|starbucks|burger|pizza|eats|food|kitchen)/)) {
+detectedCategory = "Food & Dining";
+} else if (lowerText.match(/(shell|chevron|exxon|mobil|fuel|gas|uber|lyft|transit|train|subway)/)) {
+detectedCategory = "Transport & Fuel";
+} else if (lowerText.match(/(walmart|target|costco|safeway|kroger|aldi|whole\s*foods|grocery)/)) {
+detectedCategory = "Groceries";
+} else if (lowerText.match(/(amazon|h&m|zara|nike|mall|store|clothing|retail)/)) {
+detectedCategory = "Shopping & Retail";
+} else if (lowerText.match(/(electric|water|at&t|verizon|comcast|power|bill)/)) {
+detectedCategory = "Utilities & Bills";
+}
+
+statusBox.style.display = 'none';
+showReviewPanel(detectedVendor, detectedAmount, detectedCategory);
+}
+
+function showReviewPanel(vendor, amount, category) {
+reviewPanel.style.display = 'block';
+editVendor.value = vendor;
+editAmount.value = amount.toFixed(2);
+editCategory.value = category;
+reviewPanel.scrollIntoView({ behavior: 'smooth' });
+}
+
+saveEntryBtn.addEventListener('click', () => {
+const finalVendor = editVendor.value.trim() || "Unspecified Vendor";
+const finalAmount = parseFloat(editAmount.value) || 0.00;
+const finalCategory = editCategory.value;
+const today = new Date().toISOString().split('T')[0];
+
+const newExpense = {
+id: Date.now(),
+date: today,
+vendor: finalVendor,
+category: finalCategory,
+amount: finalAmount
+};
+
+expenses.unshift(newExpense);
+localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+renderLedger();
+
+reviewPanel.style.display = 'none';
+preview.style.display = 'none';
+cameraInput.value = "";
+});
+
+function renderLedger() {
+ledgerBody.innerHTML = "";
+if (expenses.length === 0) {
+emptyMsg.style.display = 'block';
+return;
+}
+emptyMsg.style.display = 'none';
+expenses.forEach(item => {
+const row = document.createElement('tr');
+row.innerHTML = &lt;td&gt;${item.date}</td>
+<td style="font-weight: 500;">${escapeHtml(item.vendor)}&lt;/td&gt; &lt;td&gt;&lt;span style="font-size:12px; background:#f3f4f6; padding:3px 6px; border-radius:4px;"&gt;${item.category}</span></td>
+<td style="font-weight: 600;">${item.amount.toFixed(2)}&lt;/td&gt; &lt;td class="actions-cell"&gt; &lt;button class="btn-delete" onclick="deleteExpense(${item.id})">Delete</button>
+</td>
+`;
+ledgerBody.appendChild(row);
+});
+}
+
+window.deleteExpense = function(id) {
+if (confirm("Are you sure you want to delete this log?")) {
+expenses = expenses.filter(exp => exp.id !== id);
+localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+renderLedger();
+}
+};
+
+exportBtn.addEventListener('click', () => {
+if (expenses.length === 0) {
+alert("There are no entries logged to export yet!");
+return;
+}
+let csvContent = "data:text/csv;charset=utf-8,";
+csvContent += "Date,Vendor,Category,Amount\r\n";
+expenses.forEach(item => {
+let sanitizedVendor = "${item.vendor.replace(/"/g, '""')}"; let sanitizedCat ="{item.date},{sanitizedCat},latex
+{item.amount.toFixed(2)}\r\n`; }); const encodedUri = encodeURI(csvContent); const link = document.createElement("a"); link.setAttribute("href", encodedUri); link.setAttribute("download", `Ledger_Export_
+
+{new Date().toISOString().split('T')[0]}.csv`);
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+});
+
+function escapeHtml(str) {
+return str.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">").replace(/"/g, """).replace(/'/g, "'");
+}
+</script>
+</body>
+</html>
