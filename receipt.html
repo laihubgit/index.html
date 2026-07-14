@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Receipt Scanner (With Live Debugger)</title>
+<!-- Bulletproof OCR Engine (Runs entirely locally inside browser) -->
+<script src="https://cdn.jsdelivr.net/npm/ocrad.js/ocrad.js"></script>
+<style>
+:root {
+--bg: #f4f6f9;
+--surface: #ffffff;
+--primary: #2563eb;
+--success: #10b981;
+--text: #1f2937;
+--text-light: #6b7280;
+--border: #e5e7eb;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+body { background-color: var(--bg); color: var(--text); padding: 16px; max-width: 600px; margin: 0 auto; }
+header { margin-bottom: 20px; text-align: center; }
+h1 { font-size: 22px; color: var(--primary); margin-bottom: 4px; }
+.card { background: var(--surface); padding: 16px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 16px; border: 1px solid var(--border); }
+
+/* Debug Console Styles */
+.debug-console {
+background-color: #1e1e1e;
+color: #4af626;
+font-family: monospace;
+font-size: 11px;
+padding: 10px;
+border-radius: 8px;
+max-height: 180px;
+overflow-y: auto;
+margin-bottom: 16px;
+border: 2px solid #333;
+}
+.debug-line { margin-bottom: 4px; border-bottom: 1px solid #2e2e2e; padding-bottom: 2px; word-break: break-all; }
+.debug-error { color: #ff5f56; font-weight: bold; }
+.debug-warn { color: #ffbd2e; }
+
+.btn-capture {
+background-color: var(--primary);
+color: white;
+padding: 14px 24px;
+border-radius: 8px;
+font-size: 16px;
+font-weight: 600;
+cursor: pointer;
+display: inline-flex;
+align-items: center;
+gap: 8px;
+border: none;
+width: 100%;
+justify-content: center;
+}
+
+input[type="file"] { display: none; }
+#preview { width: 100%; max-height: 200px; object-fit: contain; border-radius: 6px; margin-top: 10px; display: none; border: 1px solid var(--border); }
+.status-box { font-size: 14px; color: var(--primary); font-weight: 500; margin-top: 8px; display: none; text-align: center; }
+
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-light); margin-bottom: 4px; }
+.form-group input, .form-group select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 15px; }
+.btn-save { background-color: var(--success); color: white; width: 100%; padding: 12px; border: none; border-radius: 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+
+.ledger-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.btn-export { background: none; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.table-container { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { background-color: var(--bg); padding: 10px; color: var(--text-light); border-bottom: 2px solid var(--border); text-align: left; }
+td { padding: 10px; border-bottom: 1px solid var(--border); }
+.btn-delete { background: none; border: none; color: #ef4444; cursor: pointer; }
+.empty-state { text-align: center; color: var(--text-light); padding: 20px 0; }
+</style>
+</head>
+<body>
+
+<header>
+<h1>Receipt Tracker</h1>
+<p style="font-size: 12px; color: var(--text-light)">Debugging Mode Active</p>
+</header>
+
+<!-- LIVE CONSOLE TERMINAL -->
+<div class="card" style="padding: 10px; background-color: #2a2a2a;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+<span style="color: white; font-size: 12px; font-weight: bold;">🖥️ Live System Log</span>
+<button onclick="clearLogs()" style="background:#555; color:white; border:none; border-radius:4px; padding:2px 8px; font-size:10px; cursor:pointer;">Clear Log</button>
+</div>
+<div class="debug-console" id="console-terminal">
+<div class="debug-line">Initializing console...</div>
+</div>
+</div>
+
+<!-- Scanner Core -->
+<div class="card">
+<label for="camera-input" class="btn-capture">📷 Scan / Upload Receipt</label>
+<input type="file" id="camera-input" accept="image/*" capture="environment">
+<div id="status" class="status-box">Ready</div>
+<img id="preview" alt="Receipt preview">
+</div>
+
+<!-- Review Form -->
+<div class="card" id="review-panel" style="display: none;">
+<h3 style="margin-bottom: 12px; font-size: 16px;">Confirm Entry</h3>
+<div class="form-group">
+<label for="edit-vendor">Vendor</label>
+<input type="text" id="edit-vendor">
+</div>
+<div class="form-group">
+<label for="edit-amount">Total Amount ($`)</label>
+<input type="number" id="edit-amount" step="0.01">
+</div>
+<div class="form-group">
+<label for="edit-category">Category</label>
+<select id="edit-category">
+<option value="Food & Dining">Food & Dining</option>
+<option value="Groceries">Groceries</option>
+<option value="Transport">Transport</option>
+<option value="Shopping">Shopping</option>
+<option value="Other">Other</option>
+</select>
+</div>
+<button class="btn-save" id="save-btn">Log Expense</button>
+</div>
+
+<!-- Log Table -->
+<div class="card">
+<div class="ledger-header">
+<h3>Logged Items</h3>
+<button class="btn-export" id="export-btn">📥 CSV Export</button>
+</div>
+<div class="table-container">
+<table>
+<thead>
+<tr>
+<th>Date</th>
+<th>Vendor</th>
+<th>Amount</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody id="ledger-body"></tbody>
+</table>
+<div id="empty-msg" class="empty-state">No items logged yet.</div>
+</div>
+</div>
+
+<script>
+// Custom debugging console setup
+const terminal = document.getElementById('console-terminal');
+
+function log(message, type = 'info') {
+const line = document.createElement('div');
+line.className = debug-line${type === 'error' ? 'debug-error' : (type === 'warn' ? 'debug-warn' : '')}`;
+
+const timestamp = new Date().toTimeString().split(' ')[0];
+line.innerText = [${timestamp}] ${message};
+terminal.appendChild(line);
+terminal.scrollTop = terminal.scrollHeight;
+console.log([SYS_LOG] ${message}`);
+}
+
+function clearLogs() {
+terminal.innerHTML = '<div class="debug-line">Console cleared.</div>';
+}
+
+// Catch global unhandled JS errors and print them in the UI console
+window.onerror = function(message, source, lineno, colno, error) {
+log(CRITICAL ERROR:${message} at line {colno}`, 'error');
+return false;
+};
+
+// Check if OCR engine successfully loaded from CDN
+window.addEventListener('load', () => {
+log("System loaded. Checking OCR engine library...");
+if (typeof OCRAD !== 'undefined') {
+log("Success: OCRAD.js Engine is loaded and ready!", "info");
+} else {
+log("FAIL: OCRAD.js library did not load from CDN. Are you offline or is the script blocked?", "error");
+}
+
+// Check LocalStorage Availability
+try {
+localStorage.setItem('test', '1');
+localStorage.removeItem('test');
+log("Success: LocalStorage is available.", "info");
+} catch(e) {
+log("FAIL: LocalStorage is blocked. App cannot save data.", "error");
+}
+});
+
+const cameraInput = document.getElementById('camera-input');
+const preview = document.getElementById('preview');
+const statusBox = document.getElementById('status');
+const reviewPanel = document.getElementById('review-panel');
+
+const editVendor = document.getElementById('edit-vendor');
+const editAmount = document.getElementById('edit-amount');
+const editCategory = document.getElementById('edit-category');
+const saveBtn = document.getElementById('save-btn');
+
+const ledgerBody = document.getElementById('ledger-body');
+const emptyMsg = document.getElementById('empty-msg');
+const exportBtn = document.getElementById('export-btn');
+
+const STORAGE_KEY = 'receipt_ocr_backup_ledger';
+let expenses = [];
+
+try {
+expenses = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+log(Loaded ${expenses.length} existing transactions from storage.`);
+} catch(e) {
+log("Error parsing storage data. Starting fresh.", "warn");
+}
+
+renderLedger();
+
+cameraInput.addEventListener('change', function(e) {
+const file = e.target.files[0];
+if (!file) {
+log("No file chosen or user cancelled camera action.", "warn");
+return;
+}
+
+log(File received: "${file.name}" | Size: {file.type}`);
+
+statusBox.style.display = 'block';
+statusBox.innerText = "⏳ Loading photo...";
+
+const reader = new FileReader();
+
+reader.onerror = function() {
+log("FileReader encountered an error reading the image file.", "error");
+};
+
+reader.onload = function(event) {
+log("FileReader successfully loaded image into memory.");
+preview.src = event.target.result;
+preview.style.display = 'block';
+
+const img = new Image();
+
+img.onerror = function() {
+log("Failed to render file as an HTML Image object.", "error");
+};
+
+img.onload = function() {
+log(Image decoded successfully. True dimensions: ${img.width}x${img.height});
+statusBox.innerText = "⏳ OCR reading starting...";
+
+// Create offline canvas
+log("Creating offline image canvas...");
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+canvas.width = img.width;
+canvas.height = img.height;
+
+try {
+ctx.drawImage(img, 0, 0);
+log("Image successfully rendered onto canvas. Launching OCRAD processing engine...");
+} catch (canvasErr) {
+log(Canvas drawing failed: ${canvasErr.message}`, "error");
+}
+
+try {
+if (typeof OCRAD === 'undefined') {
+throw new Error("OCRAD Engine object is missing from window context.");
+}
+
+// Execute OCR
+const text = OCRAD(canvas);
+log(OCRAD completed. Extracted character length:${text.length}`);
+statusBox.innerText = "✅ Done!";
+
+parseReceiptText(text);
+} catch (ocrError) {
+log(OCR Processing Failed: ${ocrError.message}`, "error");
+statusBox.innerText = "⚠️ Ready for manual entry.";
+showReviewPanel("Local Merchant", 0.00, "Other");
+}
+};
+img.src = event.target.result;
+};
+reader.readAsDataURL(file);
+});
+
+function parseReceiptText(rawText) {
+log("--- Raw OCR Output Begin ---");
+log(rawText ? rawText.trim() : "[No text detected]");
+log("--- Raw OCR Output End ---");
+
+let detectedVendor = "Local Merchant";
+let detectedAmount = 0.00;
+let detectedCategory = "Other";
+
+// Hunt for price amounts
+const priceRegex = /\b\d+[.,]\s*\d{2}\b/g;
+const prices = rawText.match(priceRegex);
+
+if (prices) {
+log(Found${prices.length} candidate prices in text: latex
+{prices.join(', ')}`); const numbers = prices.map(p =&gt; parseFloat(p.replace(',', '.'))); const highest = Math.max(...numbers); if (highest &lt; 2000) { detectedAmount = highest; log(`Selected highest logical price as Total: 
+
+{detectedAmount}); } } else { log("No patterns matching standard pricing ($XX.XX) found.", "warn");
+}
+
+statusBox.style.display = 'none';
+showReviewPanel(detectedVendor, detectedAmount, detectedCategory);
+}
+
+function showReviewPanel(vendor, amount, category) {
+log(Opening validation form... Default fields -&gt; Vendor:${vendor}, Amt: ${amount});
+reviewPanel.style.display = 'block';
+editVendor.value = vendor;
+editAmount.value = amount.toFixed(2);
+editCategory.value = category;
+reviewPanel.scrollIntoView({ behavior: 'smooth' });
+}
+
+saveBtn.addEventListener('click', () => {
+const newExpense = {
+id: Date.now(),
+date: new Date().toISOString().split('T')[0],
+vendor: editVendor.value.trim() || "Unspecified Vendor",
+category: editCategory.value,
+amount: parseFloat(editAmount.value) || 0.00
+};
+
+log(Saving item: "${newExpense.vendor}" - ${newExpense.amount});
+expenses.unshift(newExpense);
+
+try {
+localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+log("Successfully committed save state to browser Storage.");
+} catch(e) {
+log(Failed to write to local storage:${e.message}`, "error");
+}
+
+renderLedger();
+
+reviewPanel.style.display = 'none';
+preview.style.display = 'none';
+cameraInput.value = "";
+});
+
+function renderLedger() {
+ledgerBody.innerHTML = "";
+if (expenses.length === 0) {
+emptyMsg.style.display = 'block';
+return;
+}
+emptyMsg.style.display = 'none';
+expenses.forEach(item => {
+const row = document.createElement('tr');
+row.innerHTML = &lt;td&gt;${item.date}</td>
+<td><strong>${escapeHtml(item.vendor)}&lt;/strong&gt;&lt;br&gt;&lt;small style="color:var(--text-light)"&gt;${item.category}</small></td>
+<td>${item.amount.toFixed(2)}&lt;/td&gt; &lt;td&gt;&lt;button class="btn-delete" onclick="deleteItem(${item.id})">❌</button></td>
+`;
+ledgerBody.appendChild(row);
+});
+}
+
+window.deleteItem = function(id) {
+if (confirm("Delete this log?")) {
+expenses = expenses.filter(e => e.id !== id);
+try {
+localStorage.setItem(STORAGE_KEY, JSON.stringify(expenses));
+log(Deleted transaction ID:${id}); } catch(e) { log(Failed to update storage on delete: ${e.message}, "error");
+}
+renderLedger();
+}
+};
+
+exportBtn.addEventListener('click', () => {
+if (expenses.length === 0) return alert("Nothing to export!");
+let csv = "data:text/csv;charset=utf-8,Date,Vendor,Category,Amount\r\n";
+expenses.forEach(item => {
+csv += ``${item.date},"{item.category},${item.amount.toFixed(2)}\r\n`;
+});
+const link = document.createElement("a");
+link.setAttribute("href", encodeURI(csv));
+link.setAttribute("download", "Receipt_Export.csv");
+document.body.appendChild(link);
+link.click();
+document.body.removeChild(link);
+log("Exported log database as CSV file.");
+});
+
+function escapeHtml(str) {
+return str.replace(/&/g, "&").replace(/</g, "<").replace(/>/g, ">");
+}
+</script>
+</body>
+</html>
