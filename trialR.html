@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simplified Receipt Tracker</title>
+<style>
+body { font-family: sans-serif; padding: 20px; background: #f0f2f5; text-align: center; }
+.card { background: white; padding: 20px; border-radius: 8px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+.btn { background: #2563eb; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; display: block; width: 100%; box-sizing: border-box; }
+#debug { background: #1e1e1e; color: #4af626; text-align: left; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 200px; overflow-y: auto; }
+#preview { width: 100%; max-height: 250px; object-fit: contain; margin-top: 15px; display: none; }
+</style>
+</head>
+<body>
+
+<h1>Receipt Tracker</h1>
+
+<div class="card">
+<h3>System Diagnostics</h3>
+<div id="debug">System waiting...</div>
+</div>
+
+<div class="card">
+<label for="camera" class="btn">📸 Click here to Take/Upload Photo</label>
+<input type="file" id="camera" accept="image/*" capture="environment" style="display: none;">
+<img id="preview" alt="Preview window">
+</div>
+
+<script>
+// Simple Console Output helper
+const debugDiv = document.getElementById('debug');
+function printLog(text) {
+debugDiv.innerHTML += "<br>> " + text;
+console.log(text);
+}
+
+// Test if JS can run at all
+window.addEventListener('DOMContentLoaded', () => {
+printLog("HTML elements fully loaded!");
+printLog("Testing JavaScript execution... Success!");
+
+// Register file input listener
+const cameraInput = document.getElementById('camera');
+const previewImage = document.getElementById('preview');
+
+cameraInput.addEventListener('change', (e) => {
+printLog("File selection changed detected!");
+const file = e.target.files[0];
+
+if (!file) {
+printLog("Error: Cancelled or no file picked.");
+return;
+}
+
+printLog(File Found! Name: ${file.name} | Size: ${file.size} bytes);
+
+const reader = new FileReader();
+
+reader.onload = function(event) {
+printLog("File successfully read as DataURL.");
+previewImage.src = event.target.result;
+previewImage.style.display = 'block';
+printLog("Image preview should now be visible below.");
+};
+
+reader.onerror = function() {
+printLog("CRITICAL: Reader failed to read the file.");
+};
+
+printLog("Reading file...");
+reader.readAsDataURL(file);
+});
+
+printLog("Awaiting your camera action. Tap the button!");
+});
+</script>
+</body>
+</html>
